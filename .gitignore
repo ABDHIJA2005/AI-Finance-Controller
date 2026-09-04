@@ -1,0 +1,26 @@
+# Byte-compiled / Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Data & Caches
+data/*
+!data/.gitkeep
+
+# Environment
+.env
+venv/
+env/
+.venv/
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDEs & System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
