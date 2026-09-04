@@ -316,28 +316,73 @@ The Monte Carlo risk analysis module (`src/monte_carlo.py`) evaluates backtest o
 
 ---
 
-## AI Finance Controller prototype
+## 12. AI Finance Controller — Multi-Source Reconciliation Engine
 
-This repository also includes an explainable reconciliation demonstration in
-`src/reconciliation`. It generates a fixed-seed, explicitly synthetic set of
-invoices, ledger entries, payment-gateway settlements, and bank transactions.
-The separate `data/reconciliation/ground_truth.json` is only used by the
-evaluation layer; reconciliation never reads it.
+QuantMarket incorporates an explainable, multi-source financial reconciliation prototype located in [`src/reconciliation/`](file:///c:/Users/abdhi/OneDrive/Desktop/projects/quantmarket/src/reconciliation). The system ingests and reconciles high-volume transactions across four financial sources:
+1. **Customer Invoices** (`invoice`)
+2. **Internal Accounting General Ledger Payables** (`ledger`)
+3. **Payment Gateway Settlements** (`gateway`)
+4. **Bank Statement Feeds** (`bank`)
 
-Pipeline: ingestion → normalization → candidate generation → weighted scoring →
-policy routing → exception/audit creation → independent evaluation → dashboard.
-Weights are 40% amount, 20% date, 20% reference, 10% description, and 10%
-currency. Scores of at least 0.95 are automatic matches; 0.75–0.95 are reviewed
-only from supplied candidates; lower or ambiguous results become exceptions.
+### Core Pipeline Architecture
 
-Run the demo after installing requirements:
-
-```powershell
-uvicorn src.reconciliation.api:app --reload
+```text
+DATA INGESTION
+→ NORMALIZATION
+→ EXACT MATCHING & CANDIDATE GENERATION
+→ RULE/FUZZY SCORING & POLICY ROUTING
+→ AI REVIEW FOR AMBIGUOUS CASES (Agent Tools + Zero-Hallucination Policy)
+→ STRICT VALIDATION (Pydantic Schema + Candidate Containment + Evidence Grounding)
+→ MATCH / EXCEPTION ROUTING
+→ COMPLETE AUDIT TRAIL
+→ INDEPENDENT GROUND-TRUTH EVALUATION
+→ OPERATIONS DASHBOARD
 ```
 
-Open `http://127.0.0.1:8000` and choose **Run demo**. The API also exposes
-`POST /generate-data`, `POST /reconcile`, and read-only status, records,
-exceptions, metrics, and audit endpoints. The dashboard labels the workflow as
-assisted reconciliation: it does not claim autonomous or production-ready
-financial operation.
+### Policy Routing & Gating Rules
+- **Score $\ge 0.95$ (Single Top Candidate)**: Automatic deterministic match (`method = "deterministic"`).
+- **Score $\ge 0.95$ (Multiple Plausible Candidates)**: Multiple candidate / duplicate ambiguity cannot be auto-matched; routed through `AIReviewer` or held as `MULTIPLE_CANDIDATES` exception.
+- **$0.75 \le \text{Score} < 0.95$**: Ambiguous cases (e.g. gateway fee deductions, small settlement date shifts) are routed strictly to the `AIReviewer`.
+- **Score $< 0.75$ or Missing**: Low confidence or missing transactions are routed directly to human-review `EXCEPTION`.
+
+### AI Agent Tools & Guardrails
+The `AIReviewer` utilizes an encapsulated tool suite (`ReconciliationAgentTools`) exposing:
+- `get_transaction(record_id)`
+- `search_transactions(query)`
+- `get_candidates(record_id)`
+- `compare_records(record_a_id, record_b_id)`
+- `calculate_difference(amount_a, amount_b)`
+- `mark_match(source_id, target_id, confidence, evidence, reason_codes)`
+- `create_exception(source_id, reason_codes, confidence, evidence, recommended_action)`
+- `get_reconciliation_status()`
+- `generate_report()`
+
+**Zero-Hallucination Enforcement**:
+1. Decisions must strictly validate against the Pydantic `AIReviewDecision` schema.
+2. `matched_record_id` must strictly belong to the supplied candidate set (unsupplied candidate IDs are rejected).
+3. Evidence strings must ground factual statements in supplied records (citing unsupplied IDs triggers validation failure).
+4. Any validation failure routes the item into an operational `EXCEPTION` rather than forcing a match.
+
+### Independent Ground-Truth Evaluation & Metrics
+A separate `data/reconciliation/ground_truth.json` is generated with hidden relationships and defect truth. The reconciliation engine never sees this truth during matching. The evaluation engine (`evaluation.py`) measures:
+- **Precision**: $\frac{\text{Correct Matches}}{\text{Total System Matches}}$
+- **Recall (Reconcilable Universe)**: $\frac{\text{Correct Matches}}{\text{Total Ground-Truth Reconcilable Invoices}}$ (explicitly documenting numerator and denominator).
+- **False-Match Rate**: $\frac{\text{Incorrect Matches}}{\text{Total Invoices}}$.
+- **Exception Rate**: $\frac{\text{Exceptions}}{\text{Total Invoices}}$.
+- **Unresolved Financial Exposure**: Exact INR sum of pending exception items held for controller review.
+- **Throughput & Speed**: Records per second and total execution time.
+
+### Four Distinct System Outcomes
+1. `deterministic`: Automatic high-confidence deterministic match.
+2. `live_llm`: Live OpenAI review of bounded ambiguous candidate sets. A missing or failed API configuration creates an explicit human-review exception; it never simulates an AI decision.
+3. `exception`: Human-review exception case with explicit reason codes and recommended operational action.
+
+### Launching the Interactive Console
+
+```powershell
+uvicorn src.reconciliation.api:app --reload --port 8000
+```
+Open `http://127.0.0.1:8000` to access the interactive operations console. Click **Run Seeded Demo** to process 120 invoices across 228 records, inspect top KPI cards, view the live pipeline gate flow, filter exceptions by reason code, and use the **"Why did you match this?"** drawer to audit deterministic factor decomposition and AI tool traces.
+
+> [!WARNING]
+> **Prototype Disclaimer**: The AI Finance Controller is an assisted reconciliation proof-of-concept for educational and research evaluation. It does not claim autonomous or production-ready financial operations.

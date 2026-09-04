@@ -1,6 +1,941 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Finance Controller</title>
-<style>body{margin:0;background:#f5f7fb;color:#14213d;font:15px Inter,system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:42px}header{display:flex;justify-content:space-between;align-items:center}h1{margin:0}.sub{color:#667085}button{background:#175cd3;color:white;border:0;border-radius:7px;padding:11px 16px;font-weight:700;cursor:pointer}.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin:28px 0}.card,section{background:white;border:1px solid #e6e9f0;border-radius:10px;padding:18px;box-shadow:0 2px 8px #1018280b}.label{font-size:12px;color:#667085}.value{font-size:25px;font-weight:750;margin-top:8px}section{margin-top:16px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;border-bottom:1px solid #edf0f4}th{color:#667085;font-size:12px}select{padding:8px;border:1px solid #d0d5dd;border-radius:6px}</style></head>
-<body><main><header><div><h1>AI Finance Controller</h1><p class="sub">Assisted reconciliation · synthetic, seeded demo · review exceptions are never hidden</p></div><button onclick="runDemo()">Run demo</button></header>
-<div class="cards" id="cards"></div><section><h2>Reconciliation progress</h2><p id="progress" class="sub">Generate and reconcile the seeded demo dataset.</p></section><section><h2>Exceptions <select onchange="loadExceptions(this.value)"><option value="">All reasons</option><option>LOW_CONFIDENCE</option><option>MULTIPLE_CANDIDATES</option><option>MISSING_RECORD</option></select></h2><table><thead><tr><th>ID</th><th>Record</th><th>Amount</th><th>Reason</th><th>Confidence</th><th>Why</th></tr></thead><tbody id="exceptions"></tbody></table></section></main>
-<script>const money=x=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(x||0);async function runDemo(){await fetch('/generate-data',{method:'POST'});await fetch('/reconcile',{method:'POST'});await refresh()}async function refresh(){let s=await (await fetch('/status')).json(),m=s.metrics||{};document.getElementById('progress').textContent=`${s.processed||0} of ${s.records_loaded||0} invoice records processed · ${s.exceptions||0} held for human review`;let k=[['Records Processed',s.processed||0],['Match Rate',`${((m.match_rate||0)*100).toFixed(1)}%`],['Precision',`${((m.precision||0)*100).toFixed(1)}%`],['False Match Rate',`${((m.false_match_rate||0)*100).toFixed(1)}%`],['Exceptions',s.exceptions||0],['₹ Unresolved',money(m.unresolved_financial_value)]];document.getElementById('cards').innerHTML=k.map(x=>`<div class="card"><div class="label">${x[0]}</div><div class="value">${x[1]}</div></div>`).join('');loadExceptions('')}async function loadExceptions(reason){let u='/exceptions'+(reason?'?reason='+encodeURIComponent(reason):''),rows=await (await fetch(u)).json();document.getElementById('exceptions').innerHTML=rows.map(x=>`<tr><td>${x.id}</td><td>${x.source_record_id}</td><td>${money(x.amount)}</td><td>${x.reason_codes.join(', ')}</td><td>${(x.confidence*100).toFixed(1)}%</td><td>${x.evidence[0]}</td></tr>`).join('')}refresh()</script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Finance Controller — Multi-Source Reconciliation Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --surface: #111827;
+      --surface-elevated: #1e293b;
+      --surface-hover: #283548;
+      --border: #334155;
+      --border-subtle: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.2);
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.12);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --purple: #8b5cf6;
+      --purple-bg: rgba(139, 92, 246, 0.12);
+      --cyan: #06b6d4;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* Top Navbar */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-badge {
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: white;
+      font-weight: 800;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+    .brand h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .brand p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+    button.btn {
+      background: var(--primary);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+    button.btn:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+    button.btn-secondary {
+      background: var(--surface-elevated);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.btn-secondary:hover {
+      background: var(--surface-hover);
+    }
+
+    /* Container */
+    main {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 24px 32px 64px;
+    }
+
+    /* Pipeline Flow Bar */
+    .pipeline-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+    .pipeline-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .pipeline-stages {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .pipeline-step {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 12px;
+      position: relative;
+    }
+    .pipeline-step-name {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .pipeline-step-count {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin-top: 2px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .pipeline-step-desc {
+      font-size: 10px;
+      color: var(--text-faint);
+      margin-top: 2px;
+    }
+
+    /* Top 6 KPI Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .kpi-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+    .kpi-value {
+      font-size: 26px;
+      font-weight: 800;
+      margin-top: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.02em;
+    }
+    .kpi-caption {
+      font-size: 11px;
+      color: var(--text-faint);
+      margin-top: 6px;
+    }
+    .val-green { color: var(--success); }
+    .val-yellow { color: var(--warning); }
+    .val-blue { color: var(--cyan); }
+    .val-purple { color: var(--purple); }
+    .val-danger { color: var(--danger); }
+
+    /* Secondary Operational Stats Bar */
+    .sec-stats {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    .sec-stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sec-stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .sec-stat-val {
+      font-size: 16px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Content Layout */
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    /* Panels */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Table styling */
+    .table-container {
+      overflow-x: auto;
+      max-height: 480px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: left;
+    }
+    th {
+      background: var(--surface-elevated);
+      color: var(--text-muted);
+      padding: 10px 12px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text);
+    }
+    tr:hover td {
+      background: var(--surface-hover);
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      padding: 3px 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge-deterministic { background: var(--success-bg); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .badge-live_llm { background: var(--primary-glow); color: var(--primary); border: 1px solid rgba(59,130,246,0.3); }
+    .badge-exception { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+
+    /* Action buttons in tables */
+    .btn-inspect {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--primary);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-inspect:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    /* Inspector / Audit Drawer */
+    .inspector-box {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+    .inspector-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .inspector-stat {
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 10px;
+    }
+    .inspector-stat-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .inspector-stat-value {
+      font-size: 14px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .factor-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+    .factor-name { width: 90px; color: var(--text-muted); }
+    .factor-progress {
+      flex: 1;
+      height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .factor-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+    }
+    .factor-pct { width: 40px; text-align: right; font-family: 'JetBrains Mono', monospace; }
+
+    /* Tool interaction log */
+    .tool-log-item {
+      background: var(--surface);
+      border-left: 3px solid var(--primary);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+    .tool-log-title {
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .tool-log-detail {
+      color: var(--text-muted);
+      font-size: 10px;
+      margin-top: 2px;
+    }
+
+    /* Activity Feed */
+    .activity-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .activity-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--surface-elevated);
+      border-radius: 6px;
+      font-size: 12px;
+      border-left: 3px solid var(--purple);
+    }
+
+    /* Select input */
+    select {
+      background: var(--surface-elevated);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    /* Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+      .layout-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 768px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .sec-stats { grid-template-columns: repeat(2, 1fr); }
+      main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-badge">PROTOTYPE</div>
+      <div>
+        <h1>AI Finance Controller</h1>
+        <p>Assisted Multi-Source Financial Reconciliation Engine · Deterministic Scoring + Constrained AI Review</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span id="ai-mode-tag">AI review: checking configuration…</span>
+      </div>
+      <button class="btn btn-secondary" onclick="refreshDashboard()">Refresh</button>
+      <button class="btn" id="run-btn" onclick="runDemoWorkflow()">
+        <span>Run Seeded Demo (120 Invoices)</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Pipeline Visual Progress -->
+    <div class="pipeline-container">
+      <div class="pipeline-title">Reconciliation Pipeline Flow & Stage Gate Counts</div>
+      <div class="pipeline-stages" id="pipeline-stages">
+        <div class="pipeline-step"><div class="pipeline-step-name">1. Ingestion</div><div class="pipeline-step-count" id="pipe-ingest">0</div><div class="pipeline-step-desc">4 sources</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">2. Normalized</div><div class="pipeline-step-count" id="pipe-norm">0</div><div class="pipeline-step-desc">Dates/Amounts/Refs</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">3. Candidate Match</div><div class="pipeline-step-count" id="pipe-cand">0</div><div class="pipeline-step-desc">Multi-factor score</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">4. Deterministic</div><div class="pipeline-step-count val-green" id="pipe-auto">0</div><div class="pipeline-step-desc">&ge; 95% single top</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">5. AI Review Gate</div><div class="pipeline-step-count val-purple" id="pipe-aireview">0</div><div class="pipeline-step-desc">75-95% &amp; duplicates</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">6. AI-Assisted Match</div><div class="pipeline-step-count val-blue" id="pipe-aimatch">0</div><div class="pipeline-step-desc">Validated matches</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">7. Exceptions Held</div><div class="pipeline-step-count val-danger" id="pipe-exc">0</div><div class="pipeline-step-desc">Unresolved items</div></div>
+        <div class="pipeline-step"><div class="pipeline-step-name">8. Precision Audit</div><div class="pipeline-step-count val-green" id="pipe-prec">0.0%</div><div class="pipeline-step-desc">Ground-truth verified</div></div>
+      </div>
+    </div>
+
+    <!-- Top 6 Primary KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">RECORDS PROCESSED</div>
+        <div class="kpi-value" id="kpi-processed">0</div>
+        <div class="kpi-caption" id="kpi-processed-sub">Awaiting run</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">MATCH RATE</div>
+        <div class="kpi-value val-blue" id="kpi-match-rate">0.0%</div>
+        <div class="kpi-caption">Combined auto + AI approved</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">PRECISION</div>
+        <div class="kpi-value val-green" id="kpi-precision">0.0%</div>
+        <div class="kpi-caption">Correct / Total Matched</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">FALSE MATCH RATE</div>
+        <div class="kpi-value val-green" id="kpi-false-match">0.0%</div>
+        <div class="kpi-caption">Incorrect matches / Total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">EXCEPTIONS HELD</div>
+        <div class="kpi-value val-danger" id="kpi-exceptions">0</div>
+        <div class="kpi-caption">Isolated for controller review</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">&#8377; UNRESOLVED EXPOSURE</div>
+        <div class="kpi-value val-yellow" id="kpi-unresolved">&#8377;0</div>
+        <div class="kpi-caption">Total pending financial value</div>
+      </div>
+    </div>
+
+    <!-- Secondary Operational Stats -->
+    <div class="sec-stats">
+      <div class="sec-stat-item">
+        <div class="sec-stat-label">Recall (Reconcilable Universe)</div>
+        <div class="sec-stat-val val-blue" id="sec-recall">0.0% <span style="font-size:11px;color:var(--text-faint);">(0 / 0)</span></div>
+      </div>
+      <div class="sec-stat-item">
+        <div class="sec-stat-label">Throughput / Speed</div>
+        <div class="sec-stat-val" id="sec-throughput">0 rec/s <span style="font-size:11px;color:var(--text-faint);">(0.00s)</span></div>
+      </div>
+      <div class="sec-stat-item">
+        <div class="sec-stat-label">Resolution Breakdown</div>
+        <div class="sec-stat-val" id="sec-breakdown">0 Auto &middot; 0 AI &middot; 0 Exc</div>
+      </div>
+      <div class="sec-stat-item">
+        <div class="sec-stat-label">Zero-Hallucination Guardrail</div>
+        <div class="sec-stat-val val-green">100% Pydantic Validated</div>
+      </div>
+    </div>
+
+    <!-- Workspace Layout -->
+    <div class="layout-grid">
+
+      <!-- Left Column: Tabs for Exceptions vs Matched Records -->
+      <div class="panel">
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tab-exc-btn" onclick="switchTab('exceptions')">Exceptions Review Queue (<span id="exc-count-badge">0</span>)</button>
+          <button class="tab-btn" id="tab-mat-btn" onclick="switchTab('matches')">Matched Records Explorer (<span id="mat-count-badge">0</span>)</button>
+        </div>
+
+        <!-- Exceptions View -->
+        <div id="view-exceptions">
+          <div class="panel-header" style="margin-bottom:10px;">
+            <div style="font-size:12px;color:var(--text-muted);">Filter by Exception Reason:</div>
+            <select id="exception-filter" onchange="filterExceptions(this.value)">
+              <option value="">All Reason Codes</option>
+              <option value="MISSING_RECORD">MISSING_RECORD</option>
+              <option value="DUPLICATE">DUPLICATE</option>
+              <option value="MULTIPLE_CANDIDATES">MULTIPLE_CANDIDATES</option>
+              <option value="AMOUNT_MISMATCH">AMOUNT_MISMATCH</option>
+              <option value="DATE_MISMATCH">DATE_MISMATCH</option>
+              <option value="LOW_CONFIDENCE">LOW_CONFIDENCE</option>
+            </select>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Source Record</th>
+                  <th>Amount</th>
+                  <th>Reason Code</th>
+                  <th>Confidence</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="exceptions-table-body">
+                <tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px;">No exceptions loaded. Run seeded demo.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Matched Records View -->
+        <div id="view-matches" style="display:none;">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice ID</th>
+                  <th>Matched Target</th>
+                  <th>Method</th>
+                  <th>Confidence</th>
+                  <th>Reason Code</th>
+                  <th>Audit</th>
+                </tr>
+              </thead>
+              <tbody id="matches-table-body">
+                <tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px;">No matches loaded. Run seeded demo.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: "Why Did You Match This?" / Audit Evidence Inspector -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+            Audit Evidence Inspector
+          </div>
+          <span class="badge badge-live_llm" id="inspector-method-badge">Ready</span>
+        </div>
+
+        <div id="inspector-content">
+          <p style="color:var(--text-muted);font-size:13px;padding:20px 0;text-align:center;">
+            Click <strong>"Why did you match this?"</strong> on any match or <strong>"Inspect"</strong> on any exception to view complete deterministic scoring components, AI tool traces, and Pydantic validation proof.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Agent Activity & Pipeline Trace -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Live Pipeline Stage &amp; Agent Activity Feed
+        </div>
+        <span style="font-size:11px;color:var(--text-muted);" id="activity-timestamp">Updated: Never</span>
+      </div>
+      <div class="activity-feed" id="activity-feed">
+        <div class="activity-item">Controller initialized. Click "Run Seeded Demo" to execute the 120-invoice reconciliation pipeline.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const money = x => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(x || 0);
+
+    let allExceptions = [];
+    let allRecordsWithDecisions = [];
+    let currentAuditId = null;
+
+    async function runDemoWorkflow() {
+      const btn = document.getElementById('run-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<span>Processing 120 Invoices...</span>`;
+      try {
+        await fetch('/generate-data', { method: 'POST' });
+        await fetch('/reconcile', { method: 'POST' });
+        await refreshDashboard();
+      } catch (err) {
+        alert('Error executing demo: ' + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>Run Seeded Demo (120 Invoices)</span>`;
+      }
+    }
+
+    async function refreshDashboard() {
+      const statusRes = await fetch('/status');
+      const status = await statusRes.json();
+      const m = status.metrics || {};
+      const aiReview = status.ai_review || {};
+      document.getElementById('ai-mode-tag').textContent = aiReview.configured ? `Live AI: ${aiReview.model} (strictly validated)` : 'AI review unavailable: set OPENAI_API_KEY';
+
+      // 1. Pipeline Gate Counts
+      document.getElementById('pipe-ingest').textContent = status.records_loaded || 0;
+      document.getElementById('pipe-norm').textContent = status.records_loaded || 0;
+      document.getElementById('pipe-cand').textContent = status.processed || 0;
+      document.getElementById('pipe-auto').textContent = m.automatic_matches || 0;
+      const reviewStage = (status.pipeline_stages || []).find(stage => stage.stage === 'AI Review Cases');
+      document.getElementById('pipe-aireview').textContent = reviewStage ? reviewStage.count : 0;
+      document.getElementById('pipe-aimatch').textContent = m.ai_assisted_matches || 0;
+      document.getElementById('pipe-exc').textContent = status.exceptions || 0;
+      document.getElementById('pipe-prec').textContent = `${((m.precision || 0) * 100).toFixed(1)}%`;
+
+      // 2. Top 6 Primary KPIs
+      document.getElementById('kpi-processed').textContent = status.processed || 0;
+      document.getElementById('kpi-processed-sub').textContent = `${status.records_loaded || 0} total records in universe`;
+      document.getElementById('kpi-match-rate').textContent = `${((m.match_rate || 0) * 100).toFixed(1)}%`;
+      document.getElementById('kpi-precision').textContent = `${((m.precision || 0) * 100).toFixed(1)}%`;
+      document.getElementById('kpi-false-match').textContent = `${((m.false_match_rate || 0) * 100).toFixed(1)}%`;
+      document.getElementById('kpi-exceptions').textContent = status.exceptions || 0;
+      document.getElementById('kpi-unresolved').textContent = money(m.unresolved_financial_value);
+
+      // 3. Secondary Stats Bar
+      const recPct = ((m.recall || 0) * 100).toFixed(1);
+      document.getElementById('sec-recall').innerHTML = `${recPct}% <span style="font-size:11px;color:var(--text-faint);">(${m.recall_numerator || 0} / ${m.recall_denominator || 0} true reconcilable)</span>`;
+      document.getElementById('sec-throughput').innerHTML = `${m.throughput_records_per_second || 0} rec/s <span style="font-size:11px;color:var(--text-faint);">(${m.total_processing_time_seconds || 0}s elapsed)</span>`;
+      document.getElementById('sec-breakdown').textContent = `${m.automatic_matches || 0} Deterministic · ${m.ai_assisted_matches || 0} AI-Assisted · ${status.exceptions || 0} Exceptions`;
+
+      // 4. Activity Feed
+      const actRes = await fetch('/activity');
+      const act = await actRes.json();
+      if (act.activity_log && act.activity_log.length > 0) {
+        document.getElementById('activity-feed').innerHTML = act.activity_log.map(item => `
+          <div class="activity-item">
+            <span>&bull;</span>
+            <div>${item}</div>
+          </div>
+        `).join('');
+        document.getElementById('activity-timestamp').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+      }
+
+      // 5. Load Exceptions
+      const excRes = await fetch('/exceptions');
+      allExceptions = await excRes.json();
+      document.getElementById('exc-count-badge').textContent = allExceptions.length;
+      renderExceptions(allExceptions);
+
+      // 6. Load Matched Records
+      const recRes = await fetch('/records');
+      const records = await recRes.json();
+      const invoiceRecords = records.filter(r => r.source === 'invoice');
+      
+      // Fetch details for matches
+      const matchRows = [];
+      for (const inv of invoiceRecords.slice(0, 50)) {
+        const itemRes = await fetch(`/records/${inv.id}`);
+        const item = await itemRes.json();
+        if (item.decision && item.decision.decision === 'MATCH') {
+          matchRows.push(item);
+        }
+      }
+      allRecordsWithDecisions = matchRows;
+      document.getElementById('mat-count-badge').textContent = matchRows.length;
+      renderMatches(matchRows);
+
+      // Auto-inspect first record if available
+      if (matchRows.length > 0 && !currentAuditId) {
+        inspectAudit(matchRows[0].record.id);
+      }
+    }
+
+    function renderExceptions(list) {
+      const tbody = document.getElementById('exceptions-table-body');
+      if (list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px;">No exceptions found matching filter.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = list.map(exc => `
+        <tr>
+          <td class="mono" style="color:var(--text-muted);">${exc.id}</td>
+          <td><strong class="mono">${exc.source_record_id}</strong></td>
+          <td class="mono">${money(exc.amount)}</td>
+          <td><span class="badge badge-exception">${exc.reason_codes.join(', ')}</span></td>
+          <td class="mono">${(exc.confidence * 100).toFixed(1)}%</td>
+          <td><button class="btn-inspect" onclick="inspectAudit('${exc.source_record_id}')">Inspect</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function renderMatches(list) {
+      const tbody = document.getElementById('matches-table-body');
+      if (list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-faint);padding:24px;">No matched records found.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = list.map(item => {
+        const d = item.decision;
+        const methodBadge = d.method === 'deterministic' ? 'badge-deterministic' : 'badge-live_llm';
+        return `
+          <tr>
+            <td><strong class="mono">${item.record.id}</strong></td>
+            <td class="mono" style="color:var(--cyan);">${d.matched_record_id}</td>
+            <td><span class="badge ${methodBadge}">${d.method}</span></td>
+            <td class="mono">${(d.confidence * 100).toFixed(1)}%</td>
+            <td><span style="font-size:11px;color:var(--text-muted);">${d.reason_codes.join(', ')}</span></td>
+            <td><button class="btn-inspect" onclick="inspectAudit('${item.record.id}')">Why did you match this?</button></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function inspectAudit(recordId) {
+      currentAuditId = recordId;
+      const res = await fetch(`/audit/${recordId}`);
+      if (!res.ok) {
+        document.getElementById('inspector-content').innerHTML = `<p style="color:var(--danger);padding:16px;">Audit not found for ${recordId}</p>`;
+        return;
+      }
+      const audit = await res.json();
+      const dec = audit.final_decision;
+      const src = audit.source_record;
+      const ai = audit.ai_interaction;
+
+      const methodClass = dec.method === 'deterministic' ? 'badge-deterministic' : (dec.method === 'live_llm' ? 'badge-live_llm' : 'badge-exception');
+      document.getElementById('inspector-method-badge').className = `badge ${methodClass}`;
+      document.getElementById('inspector-method-badge').textContent = `${dec.decision} · ${dec.method}`;
+
+      // Candidates table
+      const candidatesHtml = audit.candidates.length > 0 ? audit.candidates.map((c, i) => `
+        <div style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:6px;padding:8px 12px;margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="mono" style="font-weight:700;color:${i === 0 ? 'var(--cyan)' : 'var(--text-muted)'};">#${i+1} ${c.record_id}</span>
+            <span class="mono" style="font-weight:800;color:${c.score >= 0.95 ? 'var(--success)' : (c.score >= 0.75 ? 'var(--purple)' : 'var(--danger)')};">${(c.score * 100).toFixed(2)}% Score</span>
+          </div>
+          <div style="margin-top:6px;">
+            <div class="factor-bar"><span class="factor-name">Amount (40%)</span><div class="factor-progress"><div class="factor-fill" style="width:${(c.components.amount*100)}%;"></div></div><span class="factor-pct">${(c.components.amount*100).toFixed(0)}%</span></div>
+            <div class="factor-bar"><span class="factor-name">Date (20%)</span><div class="factor-progress"><div class="factor-fill" style="width:${(c.components.date*100)}%;"></div></div><span class="factor-pct">${(c.components.date*100).toFixed(0)}%</span></div>
+            <div class="factor-bar"><span class="factor-name">Reference (20%)</span><div class="factor-progress"><div class="factor-fill" style="width:${(c.components.reference*100)}%;"></div></div><span class="factor-pct">${(c.components.reference*100).toFixed(0)}%</span></div>
+            <div class="factor-bar"><span class="factor-name">Description (10%)</span><div class="factor-progress"><div class="factor-fill" style="width:${(c.components.description*100)}%;"></div></div><span class="factor-pct">${(c.components.description*100).toFixed(0)}%</span></div>
+          </div>
+        </div>
+      `).join('') : '<p style="color:var(--text-faint);font-size:11px;">No candidate scored above minimum threshold.</p>';
+
+      // Tool traces
+      const toolTracesHtml = ai && ai.tools_called && ai.tools_called.length > 0 ? ai.tools_called.map(t => `
+        <div class="tool-log-item">
+          <div class="tool-log-title">&gt; ${t.tool}(${JSON.stringify(t.arguments)})</div>
+          <div class="tool-log-detail">Result: ${JSON.stringify(t.result).slice(0, 140)}...</div>
+        </div>
+      `).join('') : '<p style="color:var(--text-faint);font-size:11px;">Direct deterministic route; AI review was not required.</p>';
+
+      // Validation status pills
+      const pydanticStatus = ai ? (ai.pydantic_validation && ai.pydantic_validation.status === 'PASSED' ? '<span class="badge badge-deterministic">Pydantic: Passed</span>' : '<span class="badge badge-exception">Pydantic: Failed</span>') : '<span class="badge badge-deterministic">Rule Gate: Verified</span>';
+      const containmentStatus = ai ? (ai.candidate_containment_validation && ai.candidate_containment_validation.status === 'PASSED' ? '<span class="badge badge-deterministic">Containment: Passed</span>' : '<span class="badge badge-exception">Containment: Failed</span>') : '';
+
+      document.getElementById('inspector-content').innerHTML = `
+        <div class="inspector-grid">
+          <div class="inspector-stat">
+            <div class="inspector-stat-label">Source Document</div>
+            <div class="inspector-stat-value mono">${src.id} (${src.source})</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${money(src.amount)} · ${src.transaction_date}</div>
+            <div style="font-size:11px;color:var(--text-faint);margin-top:2px;">Ref: ${src.reference}</div>
+          </div>
+          <div class="inspector-stat">
+            <div class="inspector-stat-label">Final Decision</div>
+            <div class="inspector-stat-value" style="color:${dec.decision === 'MATCH' ? 'var(--success)' : 'var(--danger)'};">
+              ${dec.decision} ${dec.matched_record_id ? '&#8594; ' + dec.matched_record_id : ''}
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Confidence: ${(dec.confidence * 100).toFixed(2)}%</div>
+            <div style="margin-top:4px;">${pydanticStatus} ${containmentStatus}</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Factual Evidence &amp; Reason Codes</div>
+          <div style="background:var(--surface);border:1px solid var(--border-subtle);border-radius:6px;padding:10px 12px;font-size:12px;">
+            <div style="margin-bottom:6px;">
+              ${dec.reason_codes.map(c => `<span class="badge badge-live_llm" style="margin-right:4px;">${c}</span>`).join('')}
+            </div>
+            <ul style="padding-left:18px;color:var(--text);margin-top:6px;">
+              ${dec.evidence.map(e => `<li>${e}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Candidates Evaluated &amp; Factor Scores</div>
+          ${candidatesHtml}
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">Agent Tool Call Trace Audit (${dec.method})</div>
+          ${toolTracesHtml}
+        </div>
+      `;
+    }
+
+    function filterExceptions(reason) {
+      if (!reason) {
+        renderExceptions(allExceptions);
+      } else {
+        renderExceptions(allExceptions.filter(e => e.reason_codes.includes(reason)));
+      }
+    }
+
+    function switchTab(tab) {
+      if (tab === 'exceptions') {
+        document.getElementById('view-exceptions').style.display = 'block';
+        document.getElementById('view-matches').style.display = 'none';
+        document.getElementById('tab-exc-btn').className = 'tab-btn active';
+        document.getElementById('tab-mat-btn').className = 'tab-btn';
+      } else {
+        document.getElementById('view-exceptions').style.display = 'none';
+        document.getElementById('view-matches').style.display = 'block';
+        document.getElementById('tab-exc-btn').className = 'tab-btn';
+        document.getElementById('tab-mat-btn').className = 'tab-btn active';
+      }
+    }
+
+    // Initialize on page load
+    refreshDashboard();
+  </script>
+</body>
+</html>

@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from .service import ReconciliationService
 
-app = FastAPI(title="AI Finance Controller", version="0.1.0")
+app = FastAPI(title="AI Finance Controller", version="0.2.0")
 service = ReconciliationService()
 
 
@@ -56,7 +56,11 @@ def record(record_id: str) -> dict:
 @app.get("/exceptions")
 def exceptions(reason: str | None = None) -> list[dict]:
     """List exceptions, optionally filtered by reason code."""
-    cases = service.exceptions if reason is None else [item for item in service.exceptions if reason in item.reason_codes]
+    cases = (
+        service.exceptions
+        if reason is None
+        else [item for item in service.exceptions if reason in item.reason_codes]
+    )
     return [item.to_dict() for item in cases]
 
 
@@ -68,8 +72,17 @@ def metrics() -> dict:
 
 @app.get("/audit/{record_id}")
 def audit(record_id: str) -> dict:
-    """Return the auditable evidence behind a decision."""
+    """Return the complete auditable evidence behind a decision."""
     result = service.audits.get(record_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Audit entry not found")
+        raise HTTPException(status_code=404, detail=f"Audit entry for '{record_id}' not found")
     return result.to_dict()
+
+
+@app.get("/activity")
+def activity() -> dict:
+    """Return pipeline stages and live activity log entries."""
+    return {
+        "pipeline_stages": service.pipeline_stages,
+        "activity_log": service.activity_log,
+    }

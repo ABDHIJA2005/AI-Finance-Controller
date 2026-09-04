@@ -34,50 +34,87 @@ def generate_synthetic_data(seed: int = 42, invoice_count: int = 120) -> tuple[l
     records: list[FinancialRecord] = []
     truth: dict[str, Any] = {"seed": seed, "relationships": {}, "corruptions": {}}
     vendors = ["Northstar Services", "Cedar Retail", "Aster Logistics", "Kite Labs"]
+
     for index in range(1, invoice_count + 1):
         key = f"TXN-{index:04d}"
         amount = round(rng.uniform(950, 85000), 2)
         txn_date = base + timedelta(days=index % 55)
         vendor = vendors[index % len(vendors)]
-        invoice_id, ledger_id = f"INV-{index:04d}", f"LED-{index:04d}"
-        records.extend([
-            FinancialRecord(invoice_id, "invoice", amount, "INR", txn_date, key, f"Invoice from {vendor}"),
-            FinancialRecord(ledger_id, "ledger", amount, "INR", txn_date, key, f"Payable {vendor}"),
-        ])
-        related = [invoice_id, ledger_id]
-        corruption = "CLEAN"
-        # Deterministic, deliberately varied quality defects across payment sources.
+        invoice_id = f"INV-{index:04d}"
+        records.append(FinancialRecord(invoice_id, "invoice", amount, "INR", txn_date, key, f"Invoice from {vendor}"))
+        related = [invoice_id]
+
         mode = index % 10
+
+        # Mode 0: Missing record (no counterpart in any source system)
         if mode == 0:
-            corruption = "MISSING_RECORD"
-        else:
-            gateway_id = f"GW-{index:04d}"
-            gateway_amount = amount if mode != 1 else round(amount * 0.982, 2)
-            gateway_date = txn_date + timedelta(days=2 if mode == 2 else 0)
-            gateway_ref = key if mode != 3 else f"PAY-{index:04d}"
-            gateway_desc = f"Settlement {vendor}" if mode != 4 else f"Settle {vendor.replace(' ', '')}"
-            records.append(FinancialRecord(gateway_id, "gateway", gateway_amount, "INR", gateway_date, gateway_ref, gateway_desc))
-            related.append(gateway_id)
-            if mode in {1, 2, 3, 4}:
-                corruption = {1: "AMOUNT_MISMATCH", 2: "DATE_MISMATCH", 3: "REFERENCE_MISMATCH", 4: "DESCRIPTION_MISMATCH"}[mode]
-        if mode == 5:
-            corruption = "MISSING_RECORD"
-        else:
-            bank_id = f"BNK-{index:04d}"
-            bank_amount = amount if mode != 6 else round(amount * 0.99, 2)
-            bank_date = txn_date + timedelta(days=3 if mode == 7 else 0)
-            bank_ref = key if mode != 8 else f"NEFT{index:04d}"
-            records.append(FinancialRecord(bank_id, "bank", bank_amount, "INR", bank_date, bank_ref, f"Credit {vendor}"))
-            related.append(bank_id)
-            if mode in {6, 7, 8}:
-                corruption = {6: "GATEWAY_FEE", 7: "DATE_MISMATCH", 8: "REFERENCE_MISMATCH"}[mode]
-        if mode == 9:
-            duplicate = FinancialRecord(f"BNK-DUP-{index:04d}", "bank", amount, "INR", txn_date, key, f"Credit {vendor}")
-            records.append(duplicate)
-            related.append(duplicate.id)
-            corruption = "DUPLICATE"
+            truth["corruptions"][invoice_id] = "MISSING_RECORD"
+
+        # Mode 1: Clean Exact Bank Match (deterministic >= 0.95)
+        elif mode == 1:
+            truth["corruptions"][invoice_id] = "CLEAN"
+            bnk = FinancialRecord(f"BNK-{index:04d}", "bank", amount, "INR", txn_date, key, f"Credit {vendor}")
+            records.append(bnk)
+            related.append(bnk.id)
+
+        # Mode 2: Amount Mismatch (fee variance -> score in [0.75, 0.95) -> AI Review)
+        elif mode == 2:
+            truth["corruptions"][invoice_id] = "AMOUNT_MISMATCH"
+            gw_amt = round(amount * 0.975, 2)
+            gw = FinancialRecord(f"GW-{index:04d}", "gateway", gw_amt, "INR", txn_date, key, f"Settlement {vendor}")
+            records.append(gw)
+            related.append(gw.id)
+
+        # Mode 3: Date Mismatch (shifted 2 days -> score in [0.75, 0.95) -> AI Review)
+        elif mode == 3:
+            truth["corruptions"][invoice_id] = "DATE_MISMATCH"
+            bnk = FinancialRecord(f"BNK-{index:04d}", "bank", amount, "INR", txn_date + timedelta(days=2), key, f"Credit {vendor}")
+            records.append(bnk)
+            related.append(bnk.id)
+
+        # Mode 4: Clean Exact Ledger Match (deterministic >= 0.95)
+        elif mode == 4:
+            truth["corruptions"][invoice_id] = "CLEAN"
+            led = FinancialRecord(f"LED-{index:04d}", "ledger", amount, "INR", txn_date, key, f"Payable {vendor}")
+            records.append(led)
+            related.append(led.id)
+
+        # Mode 5: Missing Record (orphaned invoice)
+        elif mode == 5:
+            truth["corruptions"][invoice_id] = "MISSING_RECORD"
+
+        # Mode 6: Gateway Fee Deduction (1.8% variance -> score in [0.75, 0.95) -> AI Review)
+        elif mode == 6:
+            truth["corruptions"][invoice_id] = "GATEWAY_FEE"
+            gw_amt = round(amount * 0.982, 2)
+            gw = FinancialRecord(f"GW-{index:04d}", "gateway", gw_amt, "INR", txn_date, key, f"Settlement {vendor}")
+            records.append(gw)
+            related.append(gw.id)
+
+        # Mode 7: Date Mismatch (shifted 3 days -> score in [0.75, 0.95) -> AI Review)
+        elif mode == 7:
+            truth["corruptions"][invoice_id] = "DATE_MISMATCH"
+            gw = FinancialRecord(f"GW-{index:04d}", "gateway", amount, "INR", txn_date + timedelta(days=3), key, f"Settlement {vendor}")
+            records.append(gw)
+            related.append(gw.id)
+
+        # Mode 8: Clean Exact Gateway Match (deterministic >= 0.95)
+        elif mode == 8:
+            truth["corruptions"][invoice_id] = "CLEAN"
+            gw = FinancialRecord(f"GW-{index:04d}", "gateway", amount, "INR", txn_date, key, f"Settlement {vendor}")
+            records.append(gw)
+            related.append(gw.id)
+
+        # Mode 9: Duplicate Bank Records (identical candidates -> multiple candidates)
+        elif mode == 9:
+            truth["corruptions"][invoice_id] = "DUPLICATE"
+            b1 = FinancialRecord(f"BNK-{index:04d}", "bank", amount, "INR", txn_date, key, f"Credit {vendor}")
+            b2 = FinancialRecord(f"BNK-DUP-{index:04d}", "bank", amount, "INR", txn_date, key, f"Credit {vendor}")
+            records.extend([b1, b2])
+            related.extend([b1.id, b2.id])
+
         truth["relationships"][invoice_id] = related
-        truth["corruptions"][invoice_id] = corruption
+
     return records, truth
 
 
