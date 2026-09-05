@@ -1,35 +1,37 @@
-# QuantMarket — Market Signal, Backtesting & Risk Analysis Engine
+# AI Finance Controller & QuantMarket Engine
 
-**QuantMarket** is a quantitative finance research framework built for systematic strategy formulation, quantitative market analysis, backtesting simulation, and statistical risk evaluation.
-
-This project is constructed as a practical research portfolio demonstrating quantitative analysis, statistical reasoning, algorithmic strategy development, and production-grade Python software engineering tailored for a Market Analyst role at Futures First.
-
----
-
-## 1. Research Objective
-
-The primary objective of **QuantMarket** is to provide an empirical, mathematically sound platform for systematic market signal research. The framework enables:
-- Empirical identification and statistical testing of market inefficiencies and quantitative trading signals.
-- Robust, event-driven/vectorized backtesting incorporating realistic market frictions (commissions, spread, slippage).
-- Granular risk analysis and stress testing (Value-at-Risk, Expected Shortfall, drawdown metrics, exposure analysis).
-- Scientifically reproducible strategy evaluation with strict prevention of data leakage and look-ahead bias.
+**AI Finance Controller & QuantMarket** is an end-to-end financial engineering and quantitative research platform combining:
+1. **AI Finance Controller (`src/reconciliation/`)**: An autonomous, explainable multi-source financial reconciliation engine that resolves discrepancies across Invoices, Accounting General Ledgers, Payment Gateways, and Bank Feeds using deterministic policy gating, tool-augmented LLM review, and zero-hallucination guardrails.
+2. **QuantMarket Engine (`src/`)**: An empirical quantitative framework for systematic strategy formulation, technical feature engineering, friction-aware backtesting ($T \to T+1$ execution, slippage, brokerage fees), out-of-sample partition testing, and Monte Carlo bootstrap risk analysis.
 
 ---
 
-## 2. Planned Architecture
+## 1. Project Overview & Objectives
+
+The platform provides an empirical, mathematically sound platform bridging systematic quantitative trading research and autonomous corporate financial operations:
+- **Autonomous Financial Operations**: Multi-source reconciliation pipeline with transparent audit trails, explainable decision factors, and automated exception routing.
+- **Empirical Market Signal Research**: Identification and statistical validation of market inefficiencies without data snooping or curve fitting.
+- **Friction-Aware Simulation**: Chronological backtesting strictly enforcing zero look-ahead bias and realistic market execution costs.
+- **Granular Risk & Robustness Analytics**: Sortino, Calmar, drawdown recovery dynamics, and 5,000-path Monte Carlo bootstrap simulations.
+
+---
+
+## 2. System Architecture
 
 ```text
-quantmarket/
-├── data/               # Raw, processed, and cached historical market datasets
+AI-Finance-Controller / quantmarket/
+├── data/               # Raw, processed, and cached market datasets & reconciliation feeds
 ├── src/                # Core production Python source code
-│   └── strategies/     # Signal generation & systematic strategy implementation modules
-├── dashboard/          # Interactive dashboard interface (Streamlit)
-├── tests/              # Automated unit and integration tests (Pytest)
+│   ├── strategies/     # Quantitative trading strategies (Breakout, Momentum, MA Crossover)
+│   └── reconciliation/ # AI Finance Controller multi-source reconciliation engine & tools
+├── dashboard/          # Interactive operations console (HTML5 / Vanilla JS / FastAPI)
+├── tests/              # Comprehensive test suite covering all modules (104 Pytest cases)
 ├── notebooks/          # Exploratory Data Analysis (EDA) & research notebooks
+├── scripts/            # Validation runners for backtests, signals, and Monte Carlo
 ├── README.md           # Project documentation and architecture guide
 ├── requirements.txt    # Managed project dependencies
 ├── .gitignore          # Git exclusion rules
-└── AGENTS.md           # Development rules, research standards, and statistical guidelines
+└── AGENTS.md           # Engineering guidelines, statistical rigor, and research standards
 ```
 
 ---
@@ -52,8 +54,11 @@ quantmarket/
    - Standard quantitative performance metrics: Sharpe Ratio, Sortino Ratio, Calmar Ratio, Max Drawdown.
    - Statistical risk metrics: Value-at-Risk (VaR), Expected Shortfall (CVaR), exposure metrics, and stress-testing.
 
-5. **Interactive Visualization Dashboard (`dashboard/`)**:
-   - High-impact dashboard for equity curve exploration, factor exposure breakdown, trade log analysis, and risk reporting.
+5. **Interactive Operations Console (`dashboard/`)**:
+   - Web console powered by FastAPI and modern HTML5/CSS for real-time audit trail analysis, match/exception routing, and factor breakdown.
+
+6. **AI Finance Controller (`src/reconciliation/`)**:
+   - Multi-source transaction reconciliation (Invoice, General Ledger, Payment Gateway, Bank) with tool-based AI review and strict zero-hallucination validation.
 
 ---
 
